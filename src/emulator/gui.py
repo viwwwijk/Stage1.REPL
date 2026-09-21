@@ -41,12 +41,13 @@ class EmulatorApp:
         self.window = tkinter.Tk()
         self.window.title(build_title())
 
-        self.output_box = tkinter.Text(self.window,
-                                       height=OUTPUT_HEIGHT,
+        self.output_box = tkinter.Text(self.window,\
+                                       height=OUTPUT_HEIGHT,\
                                        width=OUTPUT_WIDTH)
         self.output_box.pack()
 
-        self.input_box = tkinter.Entry(self.window, width=INPUT_WIDTH)
+        self.input_box = tkinter.Entry(self.window, \
+                                       width=INPUT_WIDTH)
         self.input_box.pack()
         self.input_box.bind("<Return>", self.on_enter_pressed)
         self.input_box.focus()
