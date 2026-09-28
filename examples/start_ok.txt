@@ -1,0 +1,5 @@
+ls
+ls -l "my folder"
+cd 'папка с пробелом'
+conf-dump
+exit
