@@ -59,6 +59,8 @@ class EmulatorApp:
         self.input_box.bind("<Return>", self.on_enter_pressed)
         self.input_box.focus()
 
+        self.print_debug_config()
+
         if self.script_path:
             self.run_script(self.script_path)
 
@@ -70,6 +72,15 @@ class EmulatorApp:
     def print_error(self, error):
         """Вывести сообщение об ошибке."""
         self.print_line("ошибка: " + str(error))
+
+    def print_debug_config(self):
+        """Вывести параметры эмулятора при запуске (отладочный вывод).
+
+        Каждый параметр печатается в формате ключ-значение. Для
+        незаданного параметра значение — пустая строка.
+        """
+        for key, value in self.config.items():
+            self.print_line(key + "=" + value)
 
     def on_enter_pressed(self, event):
         """Обработать нажатие Enter в поле ввода."""
