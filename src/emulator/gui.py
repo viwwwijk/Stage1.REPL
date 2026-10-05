@@ -1,10 +1,11 @@
-"""Графическое окно эмулятора (REPL) с поддержкой конфигурации."""
+"""Графическое окно эмулятора (REPL) с конфигурацией и VFS."""
 import getpass
 import socket
 import tkinter
 
 from emulator.commands import EXIT_RESULT, CommandError, execute
 from emulator.parser import ParserError, parse_line, split_command
+from emulator.vfs import Vfs, VfsError, count_nodes, load_vfs
 
 OUTPUT_HEIGHT = 20
 OUTPUT_WIDTH = 80
@@ -38,6 +39,7 @@ class EmulatorApp:
     """Главное окно эмулятора."""
 
     def __init__(self, vfs_path=None, script_path=None):
+        """Создать окно, загрузить VFS и выполнить стартовый скрипт."""
         self.vfs_path = vfs_path
         self.script_path = script_path
         self.config = {
@@ -45,6 +47,7 @@ class EmulatorApp:
             "script-path": script_path or "",
         }
         self.closed = False
+        self.vfs = Vfs()
 
         self.window = tkinter.Tk()
         self.window.title(build_title())
@@ -61,7 +64,7 @@ class EmulatorApp:
 
         self.print_debug_config()
 
-        if self.script_path:
+        if self.init_vfs() and self.script_path:
             self.run_script(self.script_path)
 
     def print_line(self, text):
@@ -81,6 +84,27 @@ class EmulatorApp:
         """
         for key, value in self.config.items():
             self.print_line(key + "=" + value)
+
+    def init_vfs(self):
+        """Загрузить VFS из файла, заданного параметром --vfs-path.
+
+        Без параметра используется пустая VFS из одного корневого
+        каталога. Возвращает False, если загрузить VFS не удалось:
+        это считается первой ошибкой, и стартовый скрипт не
+        выполняется.
+        """
+        if not self.vfs_path:
+            self.print_line("VFS не задана, используется пустая VFS")
+            return True
+        try:
+            self.vfs = load_vfs(self.vfs_path)
+        except VfsError as error:
+            self.print_error(error)
+            return False
+        dirs, files = count_nodes(self.vfs.root)
+        self.print_line("VFS загружена: каталогов " + str(dirs)
+                        + ", файлов " + str(files))
+        return True
 
     def on_enter_pressed(self, event):
         """Обработать нажатие Enter в поле ввода."""
@@ -107,7 +131,7 @@ class EmulatorApp:
 
         command, args = split_command(tokens)
         try:
-            result = execute(command, args, self.config)
+            result = execute(command, args, self.config, self.vfs)
         except CommandError as error:
             self.print_error(error)
             return False
