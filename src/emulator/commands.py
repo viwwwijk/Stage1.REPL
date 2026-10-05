@@ -2,8 +2,11 @@
 
 На этапе 1 ls и cd являются заглушками, их реальная логика появится
 на этапе 4. На этапе 2 добавлена служебная команда conf-dump, которая
-выводит параметры эмулятора, заданные при запуске.
+выводит параметры эмулятора, заданные при запуске. На этапе 3
+добавлена служебная команда vfs-tree, которая выводит дерево
+загруженной VFS.
 """
+from emulator.vfs import render_tree
 
 EXIT_RESULT = "__exit__"
 STUB_COMMANDS = ("ls", "cd")
@@ -14,17 +17,20 @@ class CommandError(Exception):
     """Ошибка выполнения команды."""
 
 
-def execute(command, args, config=None):
+def execute(command, args, config=None, vfs=None):
     """Выполнить команду и вернуть текст для вывода в окно.
 
     Для команды exit возвращается признак EXIT_RESULT. Параметр
-    config используется только командой conf-dump и содержит
-    параметры эмулятора, заданные при запуске.
+    config используется командой conf-dump и содержит параметры
+    эмулятора, заданные при запуске. Параметр vfs — загруженная VFS,
+    она используется командой vfs-tree.
     """
     if command == "exit":
         return execute_exit(args)
     if command == "conf-dump":
         return execute_conf_dump(args, config)
+    if command == "vfs-tree":
+        return execute_vfs_tree(args, vfs)
     if command in STUB_COMMANDS:
         return execute_stub(command, args)
     raise CommandError("неизвестная команда: " + command)
@@ -55,3 +61,12 @@ def execute_conf_dump(args, config):
     values = config or {}
     lines = (key + "=" + str(values.get(key, "") or "") for key in CONFIG_KEYS)
     return "\n".join(lines)
+
+
+def execute_vfs_tree(args, vfs):
+    """Вывести дерево каталогов и файлов VFS, не изменяя её."""
+    if args:
+        raise CommandError("vfs-tree не принимает аргументов")
+    if vfs is None:
+        raise CommandError("VFS не загружена")
+    return render_tree(vfs)

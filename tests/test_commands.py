@@ -2,6 +2,7 @@
 import unittest
 
 from emulator.commands import EXIT_RESULT, CommandError, execute
+from emulator.vfs import parse_vfs
 
 
 class ExecuteTest(unittest.TestCase):
@@ -45,6 +46,23 @@ class ExecuteTest(unittest.TestCase):
         """conf-dump не принимает аргументов."""
         with self.assertRaises(CommandError):
             execute("conf-dump", ["extra"], {})
+
+    def test_vfs_tree(self):
+        """vfs-tree выводит дерево загруженной VFS."""
+        vfs = parse_vfs("path,type,content\n/a.txt,file,\n")
+        result = execute("vfs-tree", [], {}, vfs)
+        self.assertEqual(result, "/\n  a.txt (0 байт)")
+
+    def test_vfs_tree_with_arguments(self):
+        """vfs-tree не принимает аргументов."""
+        vfs = parse_vfs("path,type,content\n")
+        with self.assertRaises(CommandError):
+            execute("vfs-tree", ["/home"], {}, vfs)
+
+    def test_vfs_tree_without_vfs(self):
+        """Без загруженной VFS vfs-tree сообщает об ошибке."""
+        with self.assertRaises(CommandError):
+            execute("vfs-tree", [])
 
 
 if __name__ == "__main__":
