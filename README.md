@@ -10,14 +10,21 @@
 нажатию `Enter`. Введённая строка дублируется в области вывода с
 приглашением `$`, чтобы получался диалог с пользователем.
 
-Текущее состояние — **этап 2 (конфигурация)**. Команды `ls` и `cd`
+Текущее состояние — **этап 3 (VFS)**. Команды `ls` и `cd`
 по-прежнему являются заглушками: они печатают своё имя и переданные
-аргументы. Виртуальная файловая система подключается на этапе 3.
+аргументы, их логика появится на этапе 4.
 
 На этапе 2 эмулятор стал настраиваемым: поддержаны параметры
 командной строки (путь к VFS и путь к стартовому скрипту), выполнение
 стартового скрипта команд эмулятора и служебная команда `conf-dump`
 для отладочного вывода заданных параметров.
+
+На этапе 3 подключена виртуальная файловая система (VFS). Её источник —
+CSV-файл, путь к которому задаётся параметром `--vfs-path`. VFS
+целиком строится в памяти, исходный файл только читается и никогда не
+изменяется. Содержимое файлов хранится в base64, поэтому поддерживаются
+и двоичные данные. Дерево загруженной VFS выводит служебная команда
+`vfs-tree`.
 
 ## Структура проекта
 
@@ -27,10 +34,12 @@ src/
   emulator/
     config.py           разбор параметров командной строки
     parser.py           разбор строки на команду и аргументы
-    commands.py         выполнение команд, включая conf-dump
+    commands.py         выполнение команд, включая conf-dump и vfs-tree
+    vfs.py              виртуальная файловая система в памяти
     gui.py               графическое окно, цикл REPL и запуск скрипта
 tests/                   модульные тесты (unittest)
 examples/                примеры стартовых скриптов эмулятора
+examples/vfs/            примеры VFS в формате CSV
 scripts/                 скрипты реальной ОС для запуска эмулятора
 run.sh / run.bat         запуск эмулятора (аргументы передаются дальше)
 ```
@@ -46,6 +55,61 @@ run.sh / run.bat         запуск эмулятора (аргументы п�
 
 Оба параметра необязательны. Если `--script-path` задан, эмулятор
 сразу после открытия окна выполняет команды из указанного файла.
+
+### Формат VFS (CSV)
+
+Первая строка файла — обязательный заголовок `path,type,content`.
+Каждая следующая строка описывает один элемент VFS:
+
+| Поле | Значение |
+| --- | --- |
+| `path` | абсолютный путь внутри VFS, например `/home/user/a.txt` |
+| `type` | `dir` — каталог, `file` — файл |
+| `content` | содержимое файла в base64 (пусто для каталога и пустого файла) |
+
+Вложенность задаётся самим путём: файл `/home/user/a.txt` лежит в
+каталоге `user`, который лежит в `home`. Недостающие родительские
+каталоги создаются автоматически, поэтому строки можно перечислять в
+любом порядке, а каталог можно объявить явно (например, пустой
+`/tmp`). Имена с пробелами записываются как есть, при необходимости
+поле заключается в двойные кавычки по правилам CSV.
+
+Пример (`examples/vfs/deep.csv`, сокращённо):
+
+```
+path,type,content
+/home,dir,
+/home/user/docs/reports,dir,
+/home/user/docs/reports/2026.txt,file,0L7RgtGH0ZHRgiDQt9CwIDIwMjYg0LPQvtC0Cg==
+/home/user/my folder/photo.png,file,iVBORw0KGgoAAAANSUhEUg==
+/etc/hostname,file,ZW11bGF0b3IK
+/tmp,dir,
+```
+
+Ошибки загрузки VFS: файл не найден или не читается, файл не в UTF-8,
+неверный заголовок, неверное число полей, неизвестный тип элемента,
+содержимое у каталога, неверные данные base64, относительный путь или
+имена `.`/`..`, повторяющийся путь, файл, используемый как каталог.
+Сообщение содержит номер строки CSV, в которой найдена ошибка.
+
+### `emulator.vfs`
+
+| Функция / класс | Назначение |
+| --- | --- |
+| `VfsError` | ошибка загрузки или разбора VFS |
+| `VfsNode(name, is_dir, content)` | элемент VFS: каталог (с `children`) или файл (с `content`) |
+| `Vfs()` | дерево VFS с корневым каталогом `root` |
+| `Vfs.add(path, is_dir, content)` | добавить элемент по абсолютному пути |
+| `Vfs.make_dirs(parts, path)` | найти каталог по списку имён, создавая недостающие |
+| `split_path(path)` | разбить абсолютный путь VFS на список имён |
+| `decode_content(text, line_number)` | декодировать содержимое файла из base64 |
+| `line_prefix(line_number)` | префикс сообщения об ошибке с номером строки CSV |
+| `add_row(vfs, row, line_number)` | добавить в VFS элемент из строки CSV |
+| `parse_vfs(text)` | построить VFS в памяти по тексту CSV |
+| `load_vfs(path)` | прочитать CSV-файл и построить по нему VFS |
+| `count_nodes(node)` | число каталогов и файлов внутри каталога |
+| `render_tree(vfs)` | текстовое представление дерева VFS |
+| `append_children(node, depth, lines)` | добавить строки дерева для содержимого каталога |
 
 ### `emulator.config`
 
@@ -64,6 +128,8 @@ run.sh / run.bat         запуск эмулятора (аргументы п�
 | `EmulatorApp(vfs_path, script_path)` | создать окно эмулятора с заданной конфигурацией |
 | `EmulatorApp.print_line(text)` | вывод строки в текстовую область |
 | `EmulatorApp.print_error(error)` | вывод сообщения об ошибке |
+| `EmulatorApp.print_debug_config()` | отладочный вывод параметров при запуске |
+| `EmulatorApp.init_vfs()` | загрузка VFS, `False` — ошибка загрузки |
 | `EmulatorApp.on_enter_pressed(event)` | обработчик нажатия `Enter` |
 | `EmulatorApp.run_line(line)` | разбор и выполнение одной строки, `True`/`False` — успех/ошибка |
 | `EmulatorApp.run_script(path)` | построчное выполнение стартового скрипта |
@@ -75,6 +141,14 @@ run.sh / run.bat         запуск эмулятора (аргументы п�
 Параметры `vfs-path` и `script-path`, переданные при запуске, хранятся
 в `EmulatorApp.config` (словарь «ключ-значение», незаданный параметр —
 пустая строка) и используются командой `conf-dump`.
+
+**Запуск эмулятора.** Сразу после открытия окна выводятся все заданные
+параметры в формате `ключ=значение` (отладочный вывод этапа 2). Затем
+загружается VFS: при успехе выводится число загруженных каталогов и
+файлов, без `--vfs-path` используется пустая VFS из одного корневого
+каталога. Ошибка загрузки VFS печатается в область вывода и считается
+первой ошибкой — стартовый скрипт в этом случае не выполняется, а
+эмулятор продолжает работать в интерактивном режиме с пустой VFS.
 
 **Выполнение стартового скрипта.** Если задан `--script-path`, окно
 эмулятора при запуске построчно читает файл скрипта. Каждая строка
@@ -104,10 +178,11 @@ run.sh / run.bat         запуск эмулятора (аргументы п�
 
 | Функция | Назначение |
 | --- | --- |
-| `execute(command, args, config=None)` | выбор и выполнение команды |
+| `execute(command, args, config=None, vfs=None)` | выбор и выполнение команды |
 | `execute_exit(args)` | завершение работы, аргументы недопустимы |
 | `execute_stub(command, args)` | вывод имени команды-заглушки и её аргументов |
 | `execute_conf_dump(args, config)` | вывод параметров эмулятора в формате `ключ=значение` |
+| `execute_vfs_tree(args, vfs)` | вывод дерева загруженной VFS |
 
 Неизвестная команда и неверные аргументы вызывают `CommandError`,
 которая перехватывается окном и печатается в область вывода.
@@ -116,6 +191,11 @@ run.sh / run.bat         запуск эмулятора (аргументы п�
 принимает и выводит все поддерживаемые параметры эмулятора, по одному
 в строке, в виде `vfs-path=...` и `script-path=...`; для незаданного
 параметра значение — пустая строка.
+
+`vfs-tree` — служебная команда этапа 3. Аргументов не принимает и
+выводит дерево загруженной VFS: каталоги — с `/` на конце, файлы — с
+размером в байтах. Команда только читает VFS и ничего в ней не
+меняет.
 
 ## Сборка и запуск
 
@@ -139,6 +219,32 @@ run.bat                                             # Windows
 | `scripts/run_vfs_only.sh` (`.bat`) | только `--vfs-path` |
 | `scripts/run_script_only.sh` (`.bat`) | только `--script-path` (успешный сценарий `examples/start_ok.txt`) |
 | `scripts/run_vfs_and_script.sh` (`.bat`) | `--vfs-path` и `--script-path` (ошибка в `examples/start_error.txt`) |
+
+Скрипты этапа 3 для проверки работы с разными вариантами VFS:
+
+| Скрипт | Что проверяет |
+| --- | --- |
+| `scripts/run_vfs_minimal.sh` (`.bat`) | минимальная VFS: один файл (`minimal.csv`) |
+| `scripts/run_vfs_files.sh` (`.bat`) | несколько файлов, включая пустой и двоичный (`files.csv`) |
+| `scripts/run_vfs_deep.sh` (`.bat`) | 4 уровня каталогов и файлов (`deep.csv`) |
+| `scripts/run_vfs_errors.sh` (`.bat`) | ошибки загрузки: нет файла, неверный заголовок, неверный base64 |
+| `scripts/run_stage3_full.sh` (`.bat`) | все команды этапов 1–3 (`examples/start_stage3.txt`) |
+| `scripts/run_stage3_errors.sh` (`.bat`) | стартовые скрипты, останавливающиеся на разных ошибках |
+
+Скрипты с несколькими запусками открывают окна по очереди: следующее
+окно появляется после закрытия предыдущего.
+
+Стартовые скрипты эмулятора:
+
+| Файл | Содержимое |
+| --- | --- |
+| `examples/vfs_show.txt` | `conf-dump` и `vfs-tree` |
+| `examples/start_stage3.txt` | все команды и режимы этапов 1–3, останавливается на ошибке аргументов `vfs-tree` |
+| `examples/start_ok.txt` | успешный сценарий этапа 2, завершается `exit` |
+| `examples/start_error.txt` | ошибка: неизвестная команда |
+| `examples/start_quote_error.txt` | ошибка: незакрытая кавычка |
+| `examples/start_exit_error.txt` | ошибка: `exit` с аргументом |
+| `examples/start_conf_error.txt` | ошибка: `conf-dump` с аргументом |
 
 Запуск тестов:
 
@@ -168,11 +274,15 @@ $ exit
 
 Последняя команда закрывает окно эмулятора.
 
-Запуск с параметрами и вывод `conf-dump` (см. `scripts/run_vfs_and_script.sh`,
-файл стартового скрипта — `examples/start_ok.txt`):
+Запуск с параметрами и вывод `conf-dump` (стартовый скрипт
+`examples/start_ok.txt`). Сначала идёт отладочный вывод параметров и
+результат загрузки VFS, затем выполняется скрипт:
 
 ```
-$ ./run.sh --vfs-path examples/vfs-stub.csv --script-path examples/start_ok.txt
+$ ./run.sh --vfs-path examples/vfs/minimal.csv --script-path examples/start_ok.txt
+vfs-path=examples/vfs/minimal.csv
+script-path=examples/start_ok.txt
+VFS загружена: каталогов 0, файлов 1
 $ ls
 ls: аргументы отсутствуют
 $ ls -l "my folder"
@@ -180,7 +290,7 @@ ls: аргументы: -l, my folder
 $ cd 'папка с пробелом'
 cd: аргументы: папка с пробелом
 $ conf-dump
-vfs-path=examples/vfs-stub.csv
+vfs-path=examples/vfs/minimal.csv
 script-path=examples/start_ok.txt
 $ exit
 ```
@@ -190,6 +300,9 @@ $ exit
 
 ```
 $ ./run.sh --script-path examples/start_error.txt
+vfs-path=
+script-path=examples/start_error.txt
+VFS не задана, используется пустая VFS
 $ ls
 ls: аргументы отсутствуют
 $ mkdir test
@@ -197,3 +310,58 @@ $ mkdir test
 ```
 
 (строка `cd done` из скрипта уже не выполняется).
+
+Работа с VFS (этап 3, `scripts/run_stage3_full.sh`):
+
+```
+$ ./run.sh --vfs-path examples/vfs/deep.csv --script-path examples/start_stage3.txt
+vfs-path=examples/vfs/deep.csv
+script-path=examples/start_stage3.txt
+VFS загружена: каталогов 7, файлов 4
+$ conf-dump
+vfs-path=examples/vfs/deep.csv
+script-path=examples/start_stage3.txt
+$ vfs-tree
+/
+  etc/
+    hostname (9 байт)
+  home/
+    user/
+      docs/
+        reports/
+          2026.txt (28 байт)
+        todo.txt (22 байт)
+      my folder/
+        photo.png (16 байт)
+  tmp/
+$ ls
+ls: аргументы отсутствуют
+$ ls -l "my folder" file.txt
+ls: аргументы: -l, my folder, file.txt
+$ cd 'папка с пробелом'
+cd: аргументы: папка с пробелом
+$ cd
+cd: аргументы отсутствуют
+$ vfs-tree /home
+ошибка: vfs-tree не принимает аргументов
+```
+
+Строки `ls` и `exit` после ошибки не выполняются, окно остаётся
+открытым.
+
+Ошибки загрузки VFS (`scripts/run_vfs_errors.sh`):
+
+```
+$ ./run.sh --vfs-path examples/vfs/missing.csv --script-path examples/vfs_show.txt
+vfs-path=examples/vfs/missing.csv
+script-path=examples/vfs_show.txt
+ошибка: не удалось открыть VFS: [Errno 2] No such file or directory: 'examples/vfs/missing.csv'
+
+$ ./run.sh --vfs-path examples/vfs/broken_header.csv --script-path examples/vfs_show.txt
+...
+ошибка: неверный формат: ожидается заголовок path,type,content
+
+$ ./run.sh --vfs-path examples/vfs/broken_base64.csv --script-path examples/vfs_show.txt
+...
+ошибка: строка 3: неверные данные base64
+```
