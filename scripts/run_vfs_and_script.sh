@@ -3,4 +3,4 @@
 # скрипт останавливается на первой ошибке (команда mkdir).
 set -e
 cd "$(dirname "$0")/.."
-./run.sh --vfs-path examples/vfs-stub.csv --script-path examples/start_error.txt
+./run.sh --vfs-path examples/vfs/minimal.csv --script-path examples/start_error.txt
