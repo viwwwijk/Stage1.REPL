@@ -1,0 +1,11 @@
+path,type,content
+/home,dir,
+/home/user,dir,
+/home/user/docs,dir,
+/home/user/docs/reports,dir,
+/home/user/docs/reports/2026.txt,file,0L7RgtGH0ZHRgiDQt9CwIDIwMjYg0LPQvtC0Cg==
+/home/user/docs/todo.txt,file,0Y3RgtCw0L8gMwrRjdGC0LDQvyA0Cg==
+/home/user/my folder,dir,
+/home/user/my folder/photo.png,file,iVBORw0KGgoAAAANSUhEUg==
+/etc/hostname,file,ZW11bGF0b3IK
+/tmp,dir,

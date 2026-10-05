@@ -1,0 +1,3 @@
+path,type,content
+/readme.txt,file,dGV4dA==
+/bad.bin,file,not*base64!

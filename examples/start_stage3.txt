@@ -1,0 +1,9 @@
+conf-dump
+vfs-tree
+ls
+ls -l "my folder" file.txt
+cd 'папка с пробелом'
+cd
+vfs-tree /home
+ls
+exit
