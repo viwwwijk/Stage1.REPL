@@ -1,0 +1,2 @@
+find / -size 1
+ls

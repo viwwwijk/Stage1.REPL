@@ -1,0 +1,2 @@
+wc -x /etc/hostname
+ls

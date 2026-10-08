@@ -1,0 +1,30 @@
+ls
+ls -l
+ls /home/user
+ls -l "/home/user/my folder" /etc/hostname
+ls home/user/docs /tmp /etc/hostname
+cd home/user
+ls
+cd docs/reports
+ls -l
+cd ..
+cd ../../..
+cd ..
+cd '/home/user/my folder'
+cd -
+cd
+find
+find /home -name "*.txt"
+find / -type d
+find home -type f -name "*.png"
+find /etc/hostname
+cd /home/user
+find . -name "todo*"
+cd
+wc /etc/hostname
+wc -l /home/user/docs/todo.txt
+wc -w -c home/user/docs/todo.txt
+wc /etc/hostname home/user/docs/todo.txt "home/user/docs/reports/2026.txt"
+wc "/home/user/my folder/photo.png"
+ls /nope
+ls

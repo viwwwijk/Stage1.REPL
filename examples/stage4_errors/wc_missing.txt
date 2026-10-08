@@ -1,0 +1,2 @@
+wc /nope.txt
+ls
