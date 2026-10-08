@@ -5,12 +5,13 @@ import tkinter
 
 from emulator.commands import EXIT_RESULT, CommandError, execute
 from emulator.parser import ParserError, parse_line, split_command
-from emulator.vfs import Vfs, VfsError, count_nodes, load_vfs
+from emulator.session import Session
+from emulator.vfs import VfsError, count_nodes, load_vfs
 
 OUTPUT_HEIGHT = 20
 OUTPUT_WIDTH = 80
 INPUT_WIDTH = 80
-PROMPT = "$ "
+PROMPT_SUFFIX = "$ "
 UNKNOWN_NAME = "unknown"
 
 
@@ -47,7 +48,7 @@ class EmulatorApp:
             "script-path": script_path or "",
         }
         self.closed = False
-        self.vfs = Vfs()
+        self.session = Session(config=self.config)
 
         self.window = tkinter.Tk()
         self.window.title(build_title())
@@ -97,20 +98,27 @@ class EmulatorApp:
             self.print_line("VFS не задана, используется пустая VFS")
             return True
         try:
-            self.vfs = load_vfs(self.vfs_path)
+            self.session.vfs = load_vfs(self.vfs_path)
         except VfsError as error:
             self.print_error(error)
             return False
-        dirs, files = count_nodes(self.vfs.root)
+        dirs, files = count_nodes(self.session.vfs.root)
         self.print_line("VFS загружена: каталогов " + str(dirs)
                         + ", файлов " + str(files))
         return True
+
+    def build_prompt(self):
+        """Вернуть приглашение с текущим каталогом VFS.
+
+        Например, ``/home$``.
+        """
+        return self.session.cwd_path() + PROMPT_SUFFIX
 
     def on_enter_pressed(self, event):
         """Обработать нажатие Enter в поле ввода."""
         line = self.input_box.get()
         self.input_box.delete(0, tkinter.END)
-        self.print_line(PROMPT + line)
+        self.print_line(self.build_prompt() + line)
         self.run_line(line)
 
     def run_line(self, line):
@@ -131,7 +139,7 @@ class EmulatorApp:
 
         command, args = split_command(tokens)
         try:
-            result = execute(command, args, self.config, self.vfs)
+            result = execute(command, args, self.session)
         except CommandError as error:
             self.print_error(error)
             return False
@@ -139,7 +147,7 @@ class EmulatorApp:
         if result == EXIT_RESULT:
             self.closed = True
             self.window.destroy()
-        else:
+        elif result:
             self.print_line(result)
         return True
 
@@ -147,8 +155,10 @@ class EmulatorApp:
         """Выполнить стартовый скрипт построчно.
 
         Каждая строка скрипта выводится в область вывода вместе с
-        приглашением `$`, как ввод, так и вывод показываются на
-        экране, имитируя диалог с пользователем. Выполнение
+        приглашением (текущий каталог и `$`): как ввод, так и вывод
+        показываются на экране, имитируя диалог с пользователем.
+        Пустой результат команды (например, у cd) не печатается.
+        Выполнение
         останавливается на первой ошибке разбора или команды.
         """
         try:
@@ -161,7 +171,7 @@ class EmulatorApp:
 
         for raw_line in lines:
             line = raw_line.rstrip("\n")
-            self.print_line(PROMPT + line)
+            self.print_line(self.build_prompt() + line)
             if not self.run_line(line):
                 return
             if self.closed:
