@@ -2,8 +2,8 @@
 import os
 import unittest
 
-from emulator.vfs import (VfsError, count_nodes, load_vfs, parse_vfs,
-                          render_tree)
+from emulator.vfs import (VfsError, count_nodes, format_path, load_vfs,
+                          parse_vfs, render_tree, resolve_parts)
 
 EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), os.pardir,
                             "examples", "vfs")
@@ -117,6 +117,54 @@ class RenderTreeTest(unittest.TestCase):
         vfs = parse_vfs(HEADER + "/a/b.txt,file,dGV4dA==\n/c,dir,\n")
         expected = "/\n  a/\n    b.txt (4 байт)\n  c/"
         self.assertEqual(render_tree(vfs), expected)
+
+
+class ResolvePartsTest(unittest.TestCase):
+    """Проверка разрешения путей относительно текущего каталога."""
+
+    def test_paths(self):
+        """Абсолютные, относительные пути, . и .. разрешаются как в UNIX."""
+        cwd = ["home", "user"]
+        cases = [
+            ("/etc", ["etc"]),
+            ("docs", ["home", "user", "docs"]),
+            ("./docs/", ["home", "user", "docs"]),
+            ("..", ["home"]),
+            ("../../..", []),
+            ("/home//user/../", ["home"]),
+            (".", ["home", "user"]),
+        ]
+        for path, expected in cases:
+            with self.subTest(path=path):
+                self.assertEqual(resolve_parts(cwd, path), expected)
+
+    def test_format_path(self):
+        """Корень выводится как /, вложенные пути — через /."""
+        self.assertEqual(format_path([]), "/")
+        self.assertEqual(format_path(["home", "user"]), "/home/user")
+
+
+class VfsGetTest(unittest.TestCase):
+    """Проверка поиска элемента VFS по списку имён."""
+
+    def setUp(self):
+        """Подготовить VFS с каталогом и файлом."""
+        self.vfs = parse_vfs(HEADER + "/a/b.txt,file,\n")
+
+    def test_existing(self):
+        """Существующий элемент находится, корень — пустой список."""
+        self.assertTrue(self.vfs.get([]).is_dir)
+        self.assertFalse(self.vfs.get(["a", "b.txt"]).is_dir)
+
+    def test_missing(self):
+        """Отсутствующий элемент даёт ошибку «нет такого файла»."""
+        with self.assertRaisesRegex(VfsError, "Нет такого"):
+            self.vfs.get(["a", "c"])
+
+    def test_file_in_the_middle(self):
+        """Файл в середине пути даёт ошибку «это не каталог»."""
+        with self.assertRaisesRegex(VfsError, "не каталог"):
+            self.vfs.get(["a", "b.txt", "c"])
 
 
 if __name__ == "__main__":

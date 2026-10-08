@@ -19,6 +19,10 @@ SEPARATOR = "/"
 INDENT = "  "
 FORBIDDEN_NAMES = (".", "..")
 FIRST_DATA_LINE = 2
+CURRENT_DIR = "."
+PARENT_DIR = ".."
+NOT_FOUND = "Нет такого файла или каталога"
+NOT_A_DIR = "Это не каталог"
 
 
 class VfsError(Exception):
@@ -61,6 +65,21 @@ class Vfs:
             raise VfsError("путь встречается повторно: " + path)
         parent.children[name] = VfsNode(name, is_dir, content)
 
+    def get(self, parts):
+        """Вернуть элемент VFS по списку имён от корня.
+
+        Если элемента нет или промежуточный элемент пути — файл,
+        возбуждается VfsError с текстом в стиле UNIX.
+        """
+        node = self.root
+        for part in parts:
+            if not node.is_dir:
+                raise VfsError(NOT_A_DIR)
+            node = node.children.get(part)
+            if node is None:
+                raise VfsError(NOT_FOUND)
+        return node
+
     def make_dirs(self, parts, path):
         """Вернуть каталог по списку имён, создавая недостающие."""
         node = self.root
@@ -84,6 +103,31 @@ def split_path(path):
         if part in FORBIDDEN_NAMES:
             raise VfsError("недопустимое имя в пути: " + path)
     return parts
+
+
+def resolve_parts(cwd, path):
+    """Вычислить список имён от корня для пути относительно cwd.
+
+    Путь, начинающийся с ``/``, считается абсолютным, иначе он
+    отсчитывается от текущего каталога cwd (списка имён). Элементы
+    ``.`` пропускаются, ``..`` поднимает на уровень вверх; выше корня
+    подняться нельзя, как и в UNIX.
+    """
+    parts = [] if path.startswith(SEPARATOR) else list(cwd)
+    for part in path.split(SEPARATOR):
+        if part in ("", CURRENT_DIR):
+            continue
+        if part == PARENT_DIR:
+            if parts:
+                parts.pop()
+            continue
+        parts.append(part)
+    return parts
+
+
+def format_path(parts):
+    """Вернуть абсолютный путь VFS по списку имён."""
+    return SEPARATOR + SEPARATOR.join(parts)
 
 
 def decode_content(text, line_number):
