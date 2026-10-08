@@ -1,56 +1,45 @@
-"""Команды эмулятора.
+"""Выбор и выполнение команд эмулятора.
 
-На этапе 1 ls и cd являются заглушками, их реальная логика появится
-на этапе 4. На этапе 2 добавлена служебная команда conf-dump, которая
-выводит параметры эмулятора, заданные при запуске. На этапе 3
-добавлена служебная команда vfs-tree, которая выводит дерево
-загруженной VFS.
+Команды exit (этап 1), conf-dump (этап 2) и vfs-tree (этап 3) —
+служебные. Команды ls, cd, find и wc (этап 4) работают с VFS и
+описаны в модуле emulator.fs_commands. Каждая команда получает список
+аргументов и объект Session с VFS, параметрами и текущим каталогом.
 """
+from emulator.errors import CommandError
+from emulator.fs_commands import (execute_cd, execute_find, execute_ls,
+                                  execute_wc)
+from emulator.session import Session
 from emulator.vfs import render_tree
 
 EXIT_RESULT = "__exit__"
-STUB_COMMANDS = ("ls", "cd")
 CONFIG_KEYS = ("vfs-path", "script-path")
 
-
-class CommandError(Exception):
-    """Ошибка выполнения команды."""
+__all__ = ["CONFIG_KEYS", "EXIT_RESULT", "CommandError", "execute"]
 
 
-def execute(command, args, config=None, vfs=None):
+def execute(command, args, session=None):
     """Выполнить команду и вернуть текст для вывода в окно.
 
-    Для команды exit возвращается признак EXIT_RESULT. Параметр
-    config используется командой conf-dump и содержит параметры
-    эмулятора, заданные при запуске. Параметр vfs — загруженная VFS,
-    она используется командой vfs-tree.
+    Для команды exit возвращается признак EXIT_RESULT. Без session
+    используется новый сеанс с пустой VFS. Неизвестная команда и
+    неверные аргументы приводят к CommandError.
     """
-    if command == "exit":
-        return execute_exit(args)
-    if command == "conf-dump":
-        return execute_conf_dump(args, config)
-    if command == "vfs-tree":
-        return execute_vfs_tree(args, vfs)
-    if command in STUB_COMMANDS:
-        return execute_stub(command, args)
-    raise CommandError("неизвестная команда: " + command)
+    if session is None:
+        session = Session()
+    handler = COMMANDS.get(command)
+    if handler is None:
+        raise CommandError("неизвестная команда: " + command)
+    return handler(args, session)
 
 
-def execute_exit(args):
+def execute_exit(args, session):
     """Обработать команду exit, аргументы для неё недопустимы."""
     if args:
         raise CommandError("exit не принимает аргументов")
     return EXIT_RESULT
 
 
-def execute_stub(command, args):
-    """Вывести имя команды-заглушки и её аргументы."""
-    if not args:
-        return command + ": аргументы отсутствуют"
-    return command + ": аргументы: " + ", ".join(args)
-
-
-def execute_conf_dump(args, config):
+def execute_conf_dump(args, session):
     """Вывести параметры эмулятора в формате ключ-значение.
 
     Значение параметра, который не был задан при запуске, выводится
@@ -58,15 +47,24 @@ def execute_conf_dump(args, config):
     """
     if args:
         raise CommandError("conf-dump не принимает аргументов")
-    values = config or {}
+    values = session.config
     lines = (key + "=" + str(values.get(key, "") or "") for key in CONFIG_KEYS)
     return "\n".join(lines)
 
 
-def execute_vfs_tree(args, vfs):
+def execute_vfs_tree(args, session):
     """Вывести дерево каталогов и файлов VFS, не изменяя её."""
     if args:
         raise CommandError("vfs-tree не принимает аргументов")
-    if vfs is None:
-        raise CommandError("VFS не загружена")
-    return render_tree(vfs)
+    return render_tree(session.vfs)
+
+
+COMMANDS = {
+    "exit": execute_exit,
+    "conf-dump": execute_conf_dump,
+    "vfs-tree": execute_vfs_tree,
+    "ls": execute_ls,
+    "cd": execute_cd,
+    "find": execute_find,
+    "wc": execute_wc,
+}
