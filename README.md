@@ -8,11 +8,10 @@
 Приложение реализовано в виде графического интерфейса на `tkinter`:
 верхняя область — вывод, нижняя строка — ввод команды, выполнение по
 нажатию `Enter`. Введённая строка дублируется в области вывода с
-приглашением `$`, чтобы получался диалог с пользователем.
+приглашением, в котором, как в UNIX, показан текущий каталог
+(например, `/home/user$ `), чтобы получался диалог с пользователем.
 
-Текущее состояние — **этап 3 (VFS)**. Команды `ls` и `cd`
-по-прежнему являются заглушками: они печатают своё имя и переданные
-аргументы, их логика появится на этапе 4.
+Текущее состояние — **этап 4 (основные команды)**.
 
 На этапе 2 эмулятор стал настраиваемым: поддержаны параметры
 командной строки (путь к VFS и путь к стартовому скрипту), выполнение
@@ -26,6 +25,11 @@ CSV-файл, путь к которому задаётся параметром
 и двоичные данные. Дерево загруженной VFS выводит служебная команда
 `vfs-tree`.
 
+На этапе 4 реализованы команды `ls` и `cd` (на этапах 1–3 они были
+заглушками) и добавлены команды `find` и `wc`. Все они работают с
+VFS в памяти и только читают её; текущий каталог хранится в сеансе
+эмулятора.
+
 ## Структура проекта
 
 ```
@@ -34,12 +38,16 @@ src/
   emulator/
     config.py           разбор параметров командной строки
     parser.py           разбор строки на команду и аргументы
-    commands.py         выполнение команд, включая conf-dump и vfs-tree
+    commands.py         выбор команды и служебные exit, conf-dump, vfs-tree
+    fs_commands.py      команды ls, cd, find, wc
+    session.py          сеанс: VFS, параметры, текущий каталог
+    errors.py           исключение CommandError
     vfs.py              виртуальная файловая система в памяти
     gui.py               графическое окно, цикл REPL и запуск скрипта
 tests/                   модульные тесты (unittest)
 examples/                примеры стартовых скриптов эмулятора
 examples/vfs/            примеры VFS в формате CSV
+examples/stage4_errors/  стартовые скрипты с ошибками команд этапа 4
 scripts/                 скрипты реальной ОС для запуска эмулятора
 run.sh / run.bat         запуск эмулятора (аргументы передаются дальше)
 ```
@@ -100,8 +108,11 @@ path,type,content
 | `VfsNode(name, is_dir, content)` | элемент VFS: каталог (с `children`) или файл (с `content`) |
 | `Vfs()` | дерево VFS с корневым каталогом `root` |
 | `Vfs.add(path, is_dir, content)` | добавить элемент по абсолютному пути |
+| `Vfs.get(parts)` | найти элемент по списку имён от корня, иначе `VfsError` |
 | `Vfs.make_dirs(parts, path)` | найти каталог по списку имён, создавая недостающие |
 | `split_path(path)` | разбить абсолютный путь VFS на список имён |
+| `resolve_parts(cwd, path)` | список имён от корня для пути относительно `cwd` (с учётом `.` и `..`) |
+| `format_path(parts)` | абсолютный путь по списку имён |
 | `decode_content(text, line_number)` | декодировать содержимое файла из base64 |
 | `line_prefix(line_number)` | префикс сообщения об ошибке с номером строки CSV |
 | `add_row(vfs, row, line_number)` | добавить в VFS элемент из строки CSV |
@@ -110,6 +121,20 @@ path,type,content
 | `count_nodes(node)` | число каталогов и файлов внутри каталога |
 | `render_tree(vfs)` | текстовое представление дерева VFS |
 | `append_children(node, depth, lines)` | добавить строки дерева для содержимого каталога |
+
+### `emulator.session`
+
+| Функция / класс | Назначение |
+| --- | --- |
+| `Session(vfs, config)` | сеанс: VFS, параметры запуска, текущий и предыдущий каталоги |
+| `Session.cwd_path()` | абсолютный путь текущего каталога |
+| `Session.lookup(path)` | найти элемент VFS по пути относительно текущего каталога |
+| `Session.change_dir(parts)` | сменить текущий каталог, запомнив предыдущий |
+
+Пути разрешаются как в UNIX: путь с `/` в начале — абсолютный,
+иначе отсчитывается от текущего каталога; `.` — текущий каталог,
+`..` — родительский, выше корня подняться нельзя; повторные слеши
+игнорируются, а путь к файлу со слешем на конце считается ошибкой.
 
 ### `emulator.config`
 
@@ -130,6 +155,7 @@ path,type,content
 | `EmulatorApp.print_error(error)` | вывод сообщения об ошибке |
 | `EmulatorApp.print_debug_config()` | отладочный вывод параметров при запуске |
 | `EmulatorApp.init_vfs()` | загрузка VFS, `False` — ошибка загрузки |
+| `EmulatorApp.build_prompt()` | приглашение с текущим каталогом, например `/home$ ` |
 | `EmulatorApp.on_enter_pressed(event)` | обработчик нажатия `Enter` |
 | `EmulatorApp.run_line(line)` | разбор и выполнение одной строки, `True`/`False` — успех/ошибка |
 | `EmulatorApp.run_script(path)` | построчное выполнение стартового скрипта |
@@ -140,7 +166,9 @@ path,type,content
 
 Параметры `vfs-path` и `script-path`, переданные при запуске, хранятся
 в `EmulatorApp.config` (словарь «ключ-значение», незаданный параметр —
-пустая строка) и используются командой `conf-dump`.
+пустая строка) и передаются в сеанс `EmulatorApp.session`, откуда их
+берёт команда `conf-dump`. Пустой результат команды (например, у
+успешной `cd`) не печатается, как в настоящей оболочке.
 
 **Запуск эмулятора.** Сразу после открытия окна выводятся все заданные
 параметры в формате `ключ=значение` (отладочный вывод этапа 2). Затем
@@ -152,7 +180,7 @@ path,type,content
 
 **Выполнение стартового скрипта.** Если задан `--script-path`, окно
 эмулятора при запуске построчно читает файл скрипта. Каждая строка
-выводится в область вывода с приглашением `$` (как будто её ввёл
+выводится в область вывода с приглашением (как будто её ввёл
 пользователь), затем выполняется — на экране отображаются и «ввод», и
 «вывод», имитируя диалог с пользователем. Выполнение скрипта
 останавливается на первой ошибке разбора строки или выполнения
@@ -178,14 +206,15 @@ path,type,content
 
 | Функция | Назначение |
 | --- | --- |
-| `execute(command, args, config=None, vfs=None)` | выбор и выполнение команды |
-| `execute_exit(args)` | завершение работы, аргументы недопустимы |
-| `execute_stub(command, args)` | вывод имени команды-заглушки и её аргументов |
-| `execute_conf_dump(args, config)` | вывод параметров эмулятора в формате `ключ=значение` |
-| `execute_vfs_tree(args, vfs)` | вывод дерева загруженной VFS |
+| `execute(command, args, session=None)` | выбор команды по таблице `COMMANDS` и её выполнение |
+| `execute_exit(args, session)` | завершение работы, аргументы недопустимы |
+| `execute_conf_dump(args, session)` | вывод параметров эмулятора в формате `ключ=значение` |
+| `execute_vfs_tree(args, session)` | вывод дерева загруженной VFS |
 
-Неизвестная команда и неверные аргументы вызывают `CommandError`,
-которая перехватывается окном и печатается в область вывода.
+Каждая команда получает список аргументов и сеанс `Session`.
+Неизвестная команда и неверные аргументы вызывают `CommandError`
+(модуль `emulator.errors`), которая перехватывается окном и
+печатается в область вывода.
 
 `conf-dump` — новая служебная команда этапа 2. Аргументов не
 принимает и выводит все поддерживаемые параметры эмулятора, по одному
@@ -196,6 +225,80 @@ path,type,content
 выводит дерево загруженной VFS: каталоги — с `/` на конце, файлы — с
 размером в байтах. Команда только читает VFS и ничего в ней не
 меняет.
+
+### Команды этапа 4 (`emulator.fs_commands`)
+
+| Команда | Описание |
+| --- | --- |
+| `ls [-l] [ПУТЬ...]` | содержимое каталогов или имена файлов |
+| `cd [ПУТЬ \| -]` | смена текущего каталога |
+| `find [ПУТЬ...] [-name ШАБЛОН] [-type f\|d]` | поиск элементов VFS |
+| `wc [-l] [-w] [-c] ФАЙЛ...` | число строк, слов и байт в файлах |
+
+Ключи можно объединять (`-lw`) и указывать в любом месте строки,
+после `--` все аргументы считаются путями.
+
+**ls.** Без путей выводит содержимое текущего каталога, имена через
+два пробела в алфавитном порядке; имена с пробелами заключаются в
+кавычки, как в GNU ls. Для файла выводится его имя в том виде, как оно
+задано. При нескольких путях сначала выводятся файлы, затем каждый
+каталог с заголовком `путь:`. Ключ `-l` выводит по строке на элемент:
+тип и права (`drwxr-xr-x` для каталога, `-rw-r--r--` для файла),
+размер (для каталога — 4096, как в ext4) и имя.
+
+**cd.** Принимает абсолютный или относительный путь, понимает `.` и
+`..`. Без аргументов переходит в корень VFS (в VFS нет домашнего
+каталога). `cd -` возвращает в предыдущий каталог и выводит его путь,
+как bash. При ошибке текущий каталог не меняется.
+
+**find.** Пути указываются перед выражением; без путей поиск идёт от
+`.`. Обход в глубину, элементы каталога — в алфавитном порядке; первым
+выводится сам заданный путь. Пути выводятся в том виде, как заданы
+(`find .` даёт `./docs`, `find /home` — `/home/user`). Условия
+объединяются через «и»: `-name` сравнивает имя элемента с шаблоном
+(`*`, `?`, `[...]`, с учётом регистра), `-type f` оставляет файлы,
+`-type d` — каталоги.
+
+**wc.** Считает строки (символы перевода строки), слова (группы
+непробельных байтов) и байты. Без ключей выводятся все три счётчика,
+ключи `-l`, `-w`, `-c` выбирают нужные; порядок вывода всегда
+строки, слова, байты. Числа выравниваются по правому краю, для
+нескольких файлов добавляется строка `итого`. Стандартного ввода в
+эмуляторе нет, поэтому хотя бы один файл обязателен.
+
+Ошибки команд этапа 4 (сообщения повторяют GNU coreutils):
+
+| Команда | Ошибки |
+| --- | --- |
+| `ls` | путь не найден; файл в середине пути или со слешем на конце; неверный ключ |
+| `cd` | путь не найден; путь ведёт к файлу; больше одного аргумента; `cd -` без предыдущего каталога |
+| `find` | путь не найден; неизвестный предикат; нет аргумента у условия; неверный тип; путь после выражения |
+| `wc` | не указаны файлы; файл не найден; путь ведёт к каталогу; неверный ключ |
+
+| Функция | Назначение |
+| --- | --- |
+| `split_options(args, allowed, command)` | разделить аргументы на ключи и операнды |
+| `is_option(arg)` | является ли аргумент ключом |
+| `quote_name(name)` | заключить имя с пробелами в кавычки |
+| `node_size(node)` | размер элемента для `ls -l` |
+| `format_entries(entries, long_format)` | строки вывода `ls` для пар (имя, элемент) |
+| `list_dir(node)` | отсортированное содержимое каталога |
+| `lookup_all(paths, session, error_prefix)` | найти элементы для всех путей или выдать ошибку |
+| `ls_access_error(path)`, `find_error(path)`, `wc_error(path)` | начало сообщения об ошибке пути |
+| `execute_ls(args, session)` | команда `ls` |
+| `format_dir_block(path, node, long_format, with_header)` | вывод `ls` для одного каталога |
+| `execute_cd(args, session)` | команда `cd` |
+| `parse_find_args(args)` | разделить аргументы `find` на пути и условия |
+| `take_predicate(expression)` | проверить и вернуть первое условие выражения |
+| `find_matches(name, node, predicates)` | подходит ли элемент под все условия |
+| `base_name(path)` | последнее имя пути для `-name` |
+| `join_label(label, name)` | присоединить имя к выводимому пути |
+| `walk(label, name, node, predicates, results)` | обход поддерева в глубину |
+| `execute_find(args, session)` | команда `find` |
+| `count_content(content)` | строки, слова и байты содержимого |
+| `execute_wc(args, session)` | команда `wc` |
+| `sum_columns(rows)` | строка `итого` |
+| `format_wc(rows)` | выравнивание вывода `wc` |
 
 ## Сборка и запуск
 
@@ -231,6 +334,13 @@ run.bat                                             # Windows
 | `scripts/run_stage3_full.sh` (`.bat`) | все команды этапов 1–3 (`examples/start_stage3.txt`) |
 | `scripts/run_stage3_errors.sh` (`.bat`) | стартовые скрипты, останавливающиеся на разных ошибках |
 
+Скрипты этапа 4:
+
+| Скрипт | Что проверяет |
+| --- | --- |
+| `scripts/run_stage4_full.sh` (`.bat`) | все режимы `ls`, `cd`, `find`, `wc` (`start_stage4.txt`, `deep.csv`) |
+| `scripts/run_stage4_errors.sh` (`.bat`) | все ошибки `ls`, `cd`, `find`, `wc` (`examples/stage4_errors/*.txt`) |
+
 Скрипты с несколькими запусками открывают окна по очереди: следующее
 окно появляется после закрытия предыдущего.
 
@@ -245,6 +355,13 @@ run.bat                                             # Windows
 | `examples/start_quote_error.txt` | ошибка: незакрытая кавычка |
 | `examples/start_exit_error.txt` | ошибка: `exit` с аргументом |
 | `examples/start_conf_error.txt` | ошибка: `conf-dump` с аргументом |
+| `examples/start_stage4.txt` | все режимы `ls`, `cd`, `find`, `wc`, завершается ошибкой `ls` |
+| `examples/stage4_errors/*.txt` | по одному случаю ошибки `ls`, `cd`, `find`, `wc` на файл |
+
+Стартовый скрипт останавливается на первой ошибке, поэтому в одном
+скрипте можно показать только одну ошибку. Остальные случаи ошибок
+этапа 4 вынесены в отдельные файлы `examples/stage4_errors/`: в каждом
+сначала ошибочная команда, затем `ls`, который уже не выполняется.
 
 Запуск тестов:
 
@@ -254,22 +371,23 @@ PYTHONPATH=src python3 -m unittest discover -s tests
 
 ## Примеры использования
 
-Интерактивный режим (этап 1, без изменений):
+Интерактивный режим (`./run.sh --vfs-path examples/vfs/deep.csv`):
 
 ```
-$ ls
-ls: аргументы отсутствуют
-$ ls -l "my folder" file.txt
-ls: аргументы: -l, my folder, file.txt
-$ cd 'папка с пробелом'
-cd: аргументы: папка с пробелом
-$ cd "unclosed
+/$ cd "/home/user/my folder"
+/home/user/my folder$ ls
+photo.png
+/home/user/my folder$ cd '../docs'
+/home/user/docs$ ls -l
+drwxr-xr-x 4096 reports
+-rw-r--r--   22 todo.txt
+/home/user/docs$ cd "unclosed
 ошибка: незакрытая кавычка "
-$ mkdir test
+/home/user/docs$ mkdir test
 ошибка: неизвестная команда: mkdir
-$ exit now
+/home/user/docs$ exit now
 ошибка: exit не принимает аргументов
-$ exit
+/home/user/docs$ exit
 ```
 
 Последняя команда закрывает окно эмулятора.
@@ -283,16 +401,15 @@ $ ./run.sh --vfs-path examples/vfs/minimal.csv --script-path examples/start_ok.t
 vfs-path=examples/vfs/minimal.csv
 script-path=examples/start_ok.txt
 VFS загружена: каталогов 0, файлов 1
-$ ls
-ls: аргументы отсутствуют
-$ ls -l "my folder"
-ls: аргументы: -l, my folder
-$ cd 'папка с пробелом'
-cd: аргументы: папка с пробелом
-$ conf-dump
+/$ ls
+readme.txt
+/$ ls -l "readme.txt"
+-rw-r--r-- 27 readme.txt
+/$ cd '/'
+/$ conf-dump
 vfs-path=examples/vfs/minimal.csv
 script-path=examples/start_ok.txt
-$ exit
+/$ exit
 ```
 
 Стартовый скрипт с ошибкой (`examples/start_error.txt`) останавливается
@@ -303,9 +420,8 @@ $ ./run.sh --script-path examples/start_error.txt
 vfs-path=
 script-path=examples/start_error.txt
 VFS не задана, используется пустая VFS
-$ ls
-ls: аргументы отсутствуют
-$ mkdir test
+/$ ls
+/$ mkdir test
 ошибка: неизвестная команда: mkdir
 ```
 
@@ -318,10 +434,10 @@ $ ./run.sh --vfs-path examples/vfs/deep.csv --script-path examples/start_stage3.
 vfs-path=examples/vfs/deep.csv
 script-path=examples/start_stage3.txt
 VFS загружена: каталогов 7, файлов 4
-$ conf-dump
+/$ conf-dump
 vfs-path=examples/vfs/deep.csv
 script-path=examples/start_stage3.txt
-$ vfs-tree
+/$ vfs-tree
 /
   etc/
     hostname (9 байт)
@@ -334,15 +450,13 @@ $ vfs-tree
       my folder/
         photo.png (16 байт)
   tmp/
-$ ls
-ls: аргументы отсутствуют
-$ ls -l "my folder" file.txt
-ls: аргументы: -l, my folder, file.txt
-$ cd 'папка с пробелом'
-cd: аргументы: папка с пробелом
-$ cd
-cd: аргументы отсутствуют
-$ vfs-tree /home
+/$ ls
+etc  home  tmp
+/$ ls -l "/home/user/my folder"
+-rw-r--r-- 16 photo.png
+/$ cd 'home/user'
+/home/user$ cd
+/$ vfs-tree /home
 ошибка: vfs-tree не принимает аргументов
 ```
 
@@ -364,4 +478,70 @@ $ ./run.sh --vfs-path examples/vfs/broken_header.csv --script-path examples/vfs_
 $ ./run.sh --vfs-path examples/vfs/broken_base64.csv --script-path examples/vfs_show.txt
 ...
 ошибка: строка 3: неверные данные base64
+```
+
+Команды этапа 4 (`scripts/run_stage4_full.sh`, сокращённо):
+
+```
+$ ./run.sh --vfs-path examples/vfs/deep.csv --script-path examples/start_stage4.txt
+vfs-path=examples/vfs/deep.csv
+script-path=examples/start_stage4.txt
+VFS загружена: каталогов 7, файлов 4
+/$ ls
+etc  home  tmp
+/$ ls /home/user
+docs  'my folder'
+/$ ls home/user/docs /tmp /etc/hostname
+/etc/hostname
+
+home/user/docs:
+reports  todo.txt
+
+/tmp:
+/$ cd home/user
+/home/user$ cd docs/reports
+/home/user/docs/reports$ ls -l
+-rw-r--r-- 28 2026.txt
+/home/user/docs/reports$ cd ../../..
+/$ cd '/home/user/my folder'
+/home/user/my folder$ cd -
+/
+/$ find /home -name "*.txt"
+/home/user/docs/reports/2026.txt
+/home/user/docs/todo.txt
+/$ find home -type f -name "*.png"
+home/user/my folder/photo.png
+/$ cd /home/user
+/home/user$ find . -name "todo*"
+./docs/todo.txt
+/home/user$ cd
+/$ wc -l /home/user/docs/todo.txt
+2 /home/user/docs/todo.txt
+/$ wc /etc/hostname home/user/docs/todo.txt "home/user/docs/reports/2026.txt"
+ 1  1  9 /etc/hostname
+ 2  4 22 home/user/docs/todo.txt
+ 1  4 28 home/user/docs/reports/2026.txt
+ 4  9 59 итого
+/$ ls /nope
+ошибка: ls: невозможно получить доступ к '/nope': Нет такого файла или каталога
+```
+
+Ошибки команд этапа 4 (`scripts/run_stage4_errors.sh`, по одному окну
+на случай):
+
+```
+/$ cd /etc/hostname
+ошибка: cd: /etc/hostname: Это не каталог
+/$ cd /home /tmp
+ошибка: cd: слишком много аргументов
+/$ ls -a
+ошибка: ls: неверный ключ — «a»
+/$ find / -size 1
+ошибка: find: неизвестный предикат «-size»
+/$ find -type f /home
+ошибка: find: пути должны предшествовать выражению: /home
+/$ wc /home
+ошибка: wc: /home: Это каталог
+/$ wc -l
+ошибка: wc: не указаны файлы (чтение стандартного ввода не поддерживается)
 ```
