@@ -59,5 +59,19 @@ class ExecuteTest(unittest.TestCase):
         self.assertEqual(execute("vfs-tree", []), "/")
 
 
+class CommandErrorTest(unittest.TestCase):
+    """Проверка исключения CommandError."""
+
+    def test_output_defaults_to_empty(self):
+        """По умолчанию частичного вывода нет."""
+        self.assertEqual(CommandError("ошибка").output, "")
+
+    def test_output_is_kept(self):
+        """Частичный вывод сохраняется отдельно от текста ошибки."""
+        error = CommandError("строка 1\nстрока 2", "готово")
+        self.assertEqual(str(error), "строка 1\nстрока 2")
+        self.assertEqual(error.output, "готово")
+
+
 if __name__ == "__main__":
     unittest.main()

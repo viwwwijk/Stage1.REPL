@@ -1,13 +1,16 @@
 """Выбор и выполнение команд эмулятора.
 
 Команды exit (этап 1), conf-dump (этап 2) и vfs-tree (этап 3) —
-служебные. Команды ls, cd, find и wc (этап 4) работают с VFS и
-описаны в модуле emulator.fs_commands. Каждая команда получает список
-аргументов и объект Session с VFS, параметрами и текущим каталогом.
+служебные. Команды ls, cd, find и wc (этап 4) читают VFS и описаны
+в модуле emulator.fs_commands. Команда rmdir (этап 5) изменяет VFS в
+памяти и описана в модуле emulator.modify_commands. Каждая команда
+получает список аргументов и объект Session с VFS, параметрами и
+текущим каталогом.
 """
 from emulator.errors import CommandError
 from emulator.fs_commands import (execute_cd, execute_find, execute_ls,
                                   execute_wc)
+from emulator.modify_commands import execute_rmdir
 from emulator.session import Session
 from emulator.vfs import render_tree
 
@@ -67,4 +70,5 @@ COMMANDS = {
     "cd": execute_cd,
     "find": execute_find,
     "wc": execute_wc,
+    "rmdir": execute_rmdir,
 }
