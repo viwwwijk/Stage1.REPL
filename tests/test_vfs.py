@@ -167,5 +167,38 @@ class VfsGetTest(unittest.TestCase):
             self.vfs.get(["a", "b.txt", "c"])
 
 
+class VfsRemoveTest(unittest.TestCase):
+    """Проверка удаления элементов VFS в памяти."""
+
+    def setUp(self):
+        """Подготовить VFS с каталогом /a и файлом /a/b.txt."""
+        self.vfs = parse_vfs(HEADER + "/a/b.txt,file,\n/c,dir,\n")
+
+    def test_remove(self):
+        """Удалённый элемент больше не находится."""
+        self.vfs.remove(["c"])
+        self.assertNotIn("c", self.vfs.root.children)
+        with self.assertRaises(VfsError):
+            self.vfs.get(["c"])
+
+    def test_remove_errors(self):
+        """Корень и отсутствующий элемент удалить нельзя."""
+        for parts in ([], ["nope"], ["a", "nope"], ["nope", "x"]):
+            with self.subTest(parts=parts):
+                with self.assertRaises(VfsError):
+                    self.vfs.remove(parts)
+
+    def test_source_file_unchanged_after_remove(self):
+        """Удаление меняет только память: файл VFS остаётся прежним."""
+        path = example_path("deep.csv")
+        with open(path, "rb") as vfs_file:
+            before = vfs_file.read()
+        vfs = load_vfs(path)
+        vfs.remove(["tmp"])
+        with open(path, "rb") as vfs_file:
+            self.assertEqual(vfs_file.read(), before)
+        self.assertIn("tmp", load_vfs(path).root.children)
+
+
 if __name__ == "__main__":
     unittest.main()
