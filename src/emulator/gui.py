@@ -74,8 +74,9 @@ class EmulatorApp:
         self.output_box.see(tkinter.END)
 
     def print_error(self, error):
-        """Вывести сообщение об ошибке."""
-        self.print_line("ошибка: " + str(error))
+        """Вывести сообщение об ошибке, каждую строку с префиксом."""
+        for line in str(error).split("\n"):
+            self.print_line("ошибка: " + line)
 
     def print_debug_config(self):
         """Вывести параметры эмулятора при запуске (отладочный вывод).
@@ -141,6 +142,8 @@ class EmulatorApp:
         try:
             result = execute(command, args, self.session)
         except CommandError as error:
+            if error.output:
+                self.print_line(error.output)
             self.print_error(error)
             return False
 
