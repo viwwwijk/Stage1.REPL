@@ -7,7 +7,7 @@
 import fnmatch
 
 from emulator.errors import CommandError
-from emulator.vfs import SEPARATOR, VfsError
+from emulator.vfs import SEPARATOR, VfsError, format_path
 
 OPTION_PREFIX = "-"
 END_OF_OPTIONS = "--"
@@ -146,10 +146,7 @@ def execute_cd(args, session):
         raise CommandError("cd: слишком много аргументов")
     path = args[0] if args else SEPARATOR
     if path == PREVIOUS_DIR:
-        if session.prev_cwd is None:
-            raise CommandError("cd: предыдущий каталог не задан")
-        session.change_dir(session.prev_cwd)
-        return session.cwd_path()
+        return change_to_previous(session)
     try:
         parts, node = session.lookup(path)
     except VfsError as error:
@@ -158,6 +155,23 @@ def execute_cd(args, session):
         raise CommandError("cd: " + path + ": Это не каталог")
     session.change_dir(parts)
     return ""
+
+
+def change_to_previous(session):
+    """Выполнить ``cd -``: вернуться в предыдущий каталог.
+
+    Предыдущий каталог мог быть удалён (rmdir), поэтому его наличие
+    проверяется заново. Возвращает путь нового текущего каталога.
+    """
+    if session.prev_cwd is None:
+        raise CommandError("cd: предыдущий каталог не задан")
+    previous = format_path(session.prev_cwd)
+    try:
+        session.vfs.get(session.prev_cwd)
+    except VfsError as error:
+        raise CommandError("cd: " + previous + ": " + str(error))
+    session.change_dir(session.prev_cwd)
+    return previous
 
 
 def parse_find_args(args):
