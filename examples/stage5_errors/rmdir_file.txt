@@ -1,0 +1,2 @@
+rmdir /home/user/notes.txt
+ls

@@ -1,0 +1,2 @@
+rmdir /tmp/build/.
+ls

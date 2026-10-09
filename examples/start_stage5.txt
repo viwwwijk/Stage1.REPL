@@ -1,0 +1,23 @@
+vfs-tree
+cd /tmp
+ls
+rmdir build
+ls
+cd /
+rmdir -v /tmp/logs
+ls /tmp
+rmdir -v tmp
+cd /home/user
+rmdir projects/old/
+ls projects
+rmdir "my folder"
+ls
+rmdir -p -v cache/2024/01/02
+ls
+rmdir -pv /var/spool/
+ls /
+find / -type d
+wc notes.txt
+vfs-tree
+rmdir /home/user/projects
+ls

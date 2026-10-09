@@ -1,0 +1,5 @@
+cd /tmp/build
+cd /
+rmdir /tmp/build
+cd -
+ls

@@ -1,8 +1,8 @@
 conf-dump
 vfs-tree
 ls
-ls -l "my folder" file.txt
-cd 'папка с пробелом'
+ls -l "/home/user/my folder"
+cd 'home/user'
 cd
 vfs-tree /home
 ls

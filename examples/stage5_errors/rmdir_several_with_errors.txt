@@ -1,0 +1,2 @@
+rmdir -v /tmp/build /nope /home /tmp/logs
+ls

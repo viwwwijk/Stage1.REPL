@@ -1,5 +1,5 @@
 ls
-ls -l "my folder"
-cd 'папка с пробелом'
+ls -l "/"
+cd '/'
 conf-dump
 exit
