@@ -4,5 +4,5 @@
 set -e
 cd "$(dirname "$0")/.."
 for script in examples/stage4_errors/*.txt; do
-    ./run.sh --vfs-path examples/vfs/deep.csv --script-path "$script"
+    sh run.sh --vfs-path examples/vfs/deep.csv --script-path "$script"
 done

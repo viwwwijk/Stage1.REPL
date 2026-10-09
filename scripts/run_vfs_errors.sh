@@ -3,6 +3,6 @@
 # Окна открываются по очереди: закройте окно, чтобы открылось следующее.
 set -e
 cd "$(dirname "$0")/.."
-./run.sh --vfs-path examples/vfs/missing.csv --script-path examples/vfs_show.txt
-./run.sh --vfs-path examples/vfs/broken_header.csv --script-path examples/vfs_show.txt
-./run.sh --vfs-path examples/vfs/broken_base64.csv --script-path examples/vfs_show.txt
+sh run.sh --vfs-path examples/vfs/missing.csv --script-path examples/vfs_show.txt
+sh run.sh --vfs-path examples/vfs/broken_header.csv --script-path examples/vfs_show.txt
+sh run.sh --vfs-path examples/vfs/broken_base64.csv --script-path examples/vfs_show.txt
